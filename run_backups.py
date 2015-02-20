@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import re
 import argparse
 import datetime
@@ -9,8 +11,11 @@ STATUS_RE = re.compile(' (\d{14}) \|\s+([a-z]+)\s+\|\s+[a-z]+\[([a-z-_]+)')
 
 
 
-def get_backups(system):
-    p = subprocess.Popen(['nixops', 'backup-status', '-d', system], stdout=subprocess.PIPE)
+def get_backups(system, statefile=None):
+    cmd = ['nixops', 'backup-status', '-d', system]
+    if statefile:
+        cmd = cmd + ['-s', statefile]
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     out, _ = p.communicate()
     return out
 
@@ -69,20 +74,26 @@ def main():
     parser = argparse.ArgumentParser(
         description='Run nixops backups and garbage-collect old state.')
     parser.add_argument(
+        '--state', type=str, default=None,
+        help='Statefile to use for nixops')
+    parser.add_argument(
         'systems', metavar='SYSTEMS', type=str, nargs='+',
         help='Name of the systems, e.g. wearewizards.io')
 
     args = parser.parse_args()
 
     for s in args.systems:
-        backups = parse_backups(get_backups(s))
+        backups = parse_backups(get_backups(s, args.state))
         backup_ids = set(x[0] for x in backups)
         keep = set(whittle(backup_ids))
         remove = backup_ids - keep
 
         for x in remove:
             backup_id = id_from_datetime(x)
-            subprocess.check_output(['nixops', 'remove-backup', '-d', s, backup_id])
+            cmd = ['nixops', 'remove-backup', '-d', s, backup_id]
+            if args.state:
+                cmd = cmd + ['-s', args.state]
+            subprocess.check_output(cmd)
 
 
 if __name__ == '__main__':
